@@ -1,19 +1,20 @@
 //! Anthropic API client implementation.
 
-use std::sync::Arc;
 use async_trait::async_trait;
-use futures::StreamExt;
 use bytes::Bytes;
+use futures::StreamExt;
+use std::sync::Arc;
 
-use crate::types::*;
-use crate::errors::*;
-use crate::provider::{ProviderClient, StreamResponse};
 use super::transform::Transformer;
 use super::types::*;
+use crate::errors::*;
+use crate::provider::{ProviderClient, StreamResponse};
+use crate::types::*;
 
 const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 pub const DEFAULT_VERSION: &str = "2023-06-01";
-pub const BETA_HEADER: &str = "prompt-caching-2024-07-31,output-128k-2025-02-19";
+pub const BETA_HEADER: &str =
+    "prompt-caching-2024-07-31,output-128k-2025-02-19,message-batches-2024-09-24";
 
 pub struct Client {
     pub config: Arc<crate::provider::ProviderConfig>,
@@ -27,7 +28,10 @@ impl Client {
         let mut cfg = crate::provider::ProviderConfig::default_with_timeout();
         crate::provider::apply_options(&mut cfg, opts);
 
-        let base_url = cfg.base_url.clone().unwrap_or_else(|| DEFAULT_BASE_URL.to_string());
+        let base_url = cfg
+            .base_url
+            .clone()
+            .unwrap_or_else(|| DEFAULT_BASE_URL.to_string());
         let timeout = cfg.timeout.unwrap_or(120);
 
         let http = reqwest::Client::builder()
@@ -68,18 +72,23 @@ impl Client {
     fn map_api_error(&self, api_err: &APIError, status_code: u16) -> RouterError {
         match status_code {
             401 => err_invalid_api_key(Provider::Anthropic).with_status_code(status_code),
-            429 => err_rate_limit(Provider::Anthropic, &api_err.message).with_status_code(status_code),
-            404 => err_model_not_found(Provider::Anthropic, &api_err.message).with_status_code(status_code),
+            429 => {
+                err_rate_limit(Provider::Anthropic, &api_err.message).with_status_code(status_code)
+            }
+            404 => err_model_not_found(Provider::Anthropic, &api_err.message)
+                .with_status_code(status_code),
             400 => {
                 if api_err.message.contains("context") || api_err.message.contains("token") {
-                    err_context_length(Provider::Anthropic, &api_err.message).with_status_code(status_code)
+                    err_context_length(Provider::Anthropic, &api_err.message)
+                        .with_status_code(status_code)
                 } else {
                     err_invalid_request(&api_err.message)
                         .with_provider(Provider::Anthropic)
                         .with_status_code(status_code)
                 }
             }
-            _ => err_server_error(Provider::Anthropic, &api_err.message).with_status_code(status_code),
+            _ => err_server_error(Provider::Anthropic, &api_err.message)
+                .with_status_code(status_code),
         }
     }
 }
@@ -93,8 +102,11 @@ impl ProviderClient for Client {
     fn supports_feature(&self, feature: &Feature) -> bool {
         matches!(
             feature,
-            Feature::Streaming | Feature::StructuredOutput | Feature::Tools
-            | Feature::Vision | Feature::Batch
+            Feature::Streaming
+                | Feature::StructuredOutput
+                | Feature::Tools
+                | Feature::Vision
+                | Feature::Batch
         )
     }
 
@@ -114,7 +126,9 @@ impl ProviderClient for Client {
         let mut anth_req = self.transformer.transform_request(req);
         anth_req.stream = Some(false);
 
-        let builder = self.http.post(format!("{}/v1/messages", self.base_url))
+        let builder = self
+            .http
+            .post(format!("{}/v1/messages", self.base_url))
             .json(&anth_req);
         let builder = self.set_headers(builder);
 
@@ -137,7 +151,9 @@ impl ProviderClient for Client {
         let mut anth_req = self.transformer.transform_request(req);
         anth_req.stream = Some(true);
 
-        let builder = self.http.post(format!("{}/v1/messages", self.base_url))
+        let builder = self
+            .http
+            .post(format!("{}/v1/messages", self.base_url))
             .json(&anth_req);
         let builder = self.set_headers(builder);
 

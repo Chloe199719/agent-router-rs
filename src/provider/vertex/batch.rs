@@ -263,7 +263,7 @@ impl Client {
     }
 
     async fn download_from_gcs(&self, bucket: &str, object_path: &str) -> Result<Vec<u8>, String> {
-        let encoded_path = urlencoding_simple(object_path);
+        let encoded_path = urlencoding_object_name(object_path);
         let url = format!(
             "https://storage.googleapis.com/storage/v1/b/{}/o/{}?alt=media",
             bucket, encoded_path
@@ -505,4 +505,48 @@ fn urlencoding_simple(s: &str) -> String {
         }
     }
     result
+}
+
+/// Percent-encode a GCS object name for the `/o/{object}` JSON API route.
+///
+/// Unlike query parameter encoding, `/` must be escaped because the entire
+/// object name is a single path segment in the API URL.
+fn urlencoding_object_name(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut buf = [0u8; 4];
+    for c in s.chars() {
+        match c {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => result.push(c),
+            _ => {
+                let encoded = c.encode_utf8(&mut buf);
+                for &byte in encoded.as_bytes() {
+                    result.push('%');
+                    result.push(char::from_digit((byte >> 4) as u32, 16).unwrap().to_ascii_uppercase());
+                    result.push(char::from_digit((byte & 0xF) as u32, 16).unwrap().to_ascii_uppercase());
+                }
+            }
+        }
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{urlencoding_object_name, urlencoding_simple};
+
+    #[test]
+    fn encodes_gcs_query_prefix_without_escaping_path_separators() {
+        assert_eq!(
+            urlencoding_simple("batch/output folder/prediction-0.jsonl"),
+            "batch/output%20folder/prediction-0.jsonl"
+        );
+    }
+
+    #[test]
+    fn encodes_gcs_object_name_as_single_path_segment() {
+        assert_eq!(
+            urlencoding_object_name("batch/output folder/prediction-0.jsonl"),
+            "batch%2Foutput%20folder%2Fprediction-0.jsonl"
+        );
+    }
 }
