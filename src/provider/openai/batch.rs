@@ -109,12 +109,14 @@ impl BatchProviderClient for Client {
                 let result = if let Some(err) = output.error {
                     BatchResult {
                         custom_id: output.custom_id,
+                        request_labels: None,
                         response: None,
                         error: Some(err_server_error(Provider::OpenAI, err.message)),
                     }
                 } else if let Some(resp_data) = output.response {
                     BatchResult {
                         custom_id: output.custom_id,
+                        request_labels: None,
                         response: self.transformer.transform_response(&resp_data.body),
                         error: None,
                     }

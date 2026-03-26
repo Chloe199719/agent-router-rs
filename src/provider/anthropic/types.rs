@@ -2,6 +2,13 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Top-level `metadata` on the Messages API (subset of keys forwarded from unified requests).
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct MessagesMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MessagesRequest {
     pub model: String,
@@ -25,6 +32,8 @@ pub struct MessagesRequest {
     pub tool_choice: Option<ToolChoice>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_config: Option<OutputConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<MessagesMetadata>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

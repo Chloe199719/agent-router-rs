@@ -37,6 +37,11 @@ impl Transformer {
             tools: None,
             tool_choice: None,
             parallel_tool_calls: None,
+            metadata: req
+                .metadata
+                .as_ref()
+                .filter(|m| !m.is_empty())
+                .cloned(),
         };
 
         // Transform response format
@@ -327,5 +332,29 @@ impl Transformer {
 impl Default for Transformer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use crate::types::{CompletionRequest, Message, Provider, Role};
+
+    #[test]
+    fn transform_includes_metadata_in_json() {
+        let t = Transformer::new();
+        let mut m = HashMap::new();
+        m.insert("trace_id".to_string(), "abc".to_string());
+        let req = CompletionRequest::new(
+            Provider::OpenAI,
+            "gpt-4o-mini",
+            vec![Message::new_text(Role::User, "x")],
+        )
+        .with_metadata(m);
+        let oai = t.transform_request(&req);
+        let v = serde_json::to_value(&oai).unwrap();
+        assert!(v.get("metadata").is_some());
+        assert_eq!(v["metadata"]["trace_id"], "abc");
     }
 }

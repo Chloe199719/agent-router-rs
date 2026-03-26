@@ -96,6 +96,7 @@ impl BatchProviderClient for Client {
                     if let Some(msg) = item.result.message {
                         BatchResult {
                             custom_id: item.custom_id,
+                            request_labels: None,
                             response: Some(self.transformer.transform_response(&msg)),
                             error: None,
                         }
@@ -103,6 +104,7 @@ impl BatchProviderClient for Client {
                 } else if let Some(err) = item.result.error {
                     BatchResult {
                         custom_id: item.custom_id,
+                        request_labels: None,
                         response: None,
                         error: Some(err_server_error(Provider::Anthropic, err.message)),
                     }

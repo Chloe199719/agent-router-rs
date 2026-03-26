@@ -5,6 +5,7 @@ use chrono::DateTime;
 
 use crate::errors::*;
 use crate::provider::{BatchProviderClient, BatchRequest, BatchJob, BatchResult, BatchStatus, ListBatchOptions, RequestCounts};
+use crate::provider::google::transform::apply_metadata_as_labels;
 use crate::types::Provider;
 use super::client::Client;
 use super::types::*;
@@ -31,6 +32,7 @@ impl BatchProviderClient for Client {
         let mut buf = Vec::new();
         for req in &requests {
             let mut g_req = self.transformer.transform_request(&req.request);
+            apply_metadata_as_labels(&mut g_req, req.request.metadata.as_ref());
             if !req.custom_id.is_empty() {
                 g_req.labels.get_or_insert_with(Default::default)
                     .insert("custom_id".to_string(), req.custom_id.clone());
@@ -364,11 +366,13 @@ impl Client {
         while let Some(Ok(line)) = deserializer.next() {
             let mut result = BatchResult {
                 custom_id: String::new(),
+                request_labels: None,
                 response: None,
                 error: None,
             };
 
             if let Some(req) = &line.request {
+                result.request_labels = Some(req.labels.clone());
                 if let Some(custom_id) = req.labels.get("custom_id") {
                     result.custom_id = custom_id.clone();
                 }
@@ -533,6 +537,36 @@ fn urlencoding_object_name(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{urlencoding_object_name, urlencoding_simple};
+    use crate::provider::google::transform::{apply_metadata_as_labels, Transformer};
+    use crate::provider::vertex::types::VertexBatchInputLine;
+    use crate::types::{CompletionRequest, Message, Provider, Role};
+
+    #[test]
+    fn batch_input_line_merges_metadata_and_custom_id() {
+        let transformer = Transformer::new();
+        let mut m = std::collections::HashMap::new();
+        m.insert("team".to_string(), "a".to_string());
+        let req = CompletionRequest::new(
+            Provider::Vertex,
+            "gemini-2.0-flash",
+            vec![Message::new_text(Role::User, "hi")],
+        )
+        .with_metadata(m);
+
+        let mut g_req = transformer.transform_request(&req);
+        apply_metadata_as_labels(&mut g_req, req.metadata.as_ref());
+        g_req
+            .labels
+            .get_or_insert_with(Default::default)
+            .insert("custom_id".to_string(), "cid1".to_string());
+
+        let line = VertexBatchInputLine {
+            request: serde_json::to_value(&g_req).unwrap(),
+        };
+        let s = serde_json::to_string(&line).unwrap();
+        assert!(s.contains("\"team\":\"a\"") || s.contains("\"team\": \"a\""));
+        assert!(s.contains("cid1"));
+    }
 
     #[test]
     fn encodes_gcs_query_prefix_without_escaping_path_separators() {

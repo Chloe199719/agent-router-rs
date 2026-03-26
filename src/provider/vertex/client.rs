@@ -15,7 +15,7 @@ use async_trait::async_trait;
 
 use crate::errors::*;
 use crate::provider::{ProviderClient, ProviderConfig, StreamResponse, apply_options, ProviderOption};
-use crate::provider::google::{Transformer, types::{GenerateContentResponse, ErrorResponse, APIError}};
+use crate::provider::google::{self, Transformer, types::{GenerateContentResponse, ErrorResponse, APIError}};
 use crate::types::{CompletionRequest, CompletionResponse, ContentBlock, Feature, Provider, StopReason, ToolCall, Usage};
 
 pub struct Client {
@@ -148,7 +148,8 @@ impl ProviderClient for Client {
     }
 
     async fn complete(&self, req: &CompletionRequest) -> Result<CompletionResponse, RouterError> {
-        let g_req = self.transformer.transform_request(req);
+        let mut g_req = self.transformer.transform_request(req);
+        google::transform::apply_metadata_as_labels(&mut g_req, req.metadata.as_ref());
         let url = self.build_url(&req.model, "generateContent");
 
         let builder = self.http
@@ -186,7 +187,8 @@ impl ProviderClient for Client {
     /// yielded. The stream is therefore simulated: all events are emitted
     /// synchronously once the body arrives.
     async fn stream(&self, req: &CompletionRequest) -> Result<StreamResponse, RouterError> {
-        let g_req = self.transformer.transform_request(req);
+        let mut g_req = self.transformer.transform_request(req);
+        google::transform::apply_metadata_as_labels(&mut g_req, req.metadata.as_ref());
         let url = self.build_url(&req.model, "streamGenerateContent");
         let model = req.model.clone();
         let transformer = Transformer::new();

@@ -1,8 +1,13 @@
 //! Integration tests — gated by the `integration` feature flag.
 //! Run with: cargo test --features integration
+//!
+//! Optional: `VERTEX_BATCH_WAIT_RESULTS=1` enables the long-running Vertex batch test
+//! [`test_vertex_batch_metadata_get_results_echoed_labels`] that asserts echoed `request_labels`.
 
 #[cfg(feature = "integration")]
 mod tests {
+    use std::collections::HashMap;
+
     use agent_router::{with_anthropic, with_google, with_openai, with_vertex, provider, Router};
     use agent_router::types::{CompletionRequest, Message, Provider, Role, StreamEventType};
     use agent_router::batch::{Manager as BatchManager, Request as BatchRequest, Status as BatchStatus};
@@ -31,6 +36,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_openai_completion_with_metadata() {
+        setup();
+        let key = std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
+        let router = Router::new(vec![with_openai(&key, vec![])]).unwrap();
+
+        let mut meta = HashMap::new();
+        meta.insert("trace_id".to_string(), "router-integration".to_string());
+
+        let req = CompletionRequest::new(
+            Provider::OpenAI,
+            "gpt-4o-mini",
+            vec![Message::new_text(Role::User, "Say 'ok' only")],
+        )
+        .with_max_tokens(10)
+        .with_metadata(meta);
+
+        let resp = router.complete(&req).await.expect("openai completion with metadata failed");
+        assert!(!resp.text().is_empty());
+        assert_eq!(resp.provider, Provider::OpenAI);
+    }
+
+    #[tokio::test]
     async fn test_anthropic_basic_completion() {
         setup();
         let key = std::env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY not set");
@@ -49,6 +76,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_anthropic_completion_with_metadata_user_id() {
+        setup();
+        let key = std::env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY not set");
+        let router = Router::new(vec![with_anthropic(&key, vec![])]).unwrap();
+
+        let mut meta = HashMap::new();
+        meta.insert("user_id".to_string(), "integration-user".to_string());
+        meta.insert("other_key".to_string(), "ignored".to_string());
+
+        let req = CompletionRequest::new(
+            Provider::Anthropic,
+            "claude-3-haiku-20240307",
+            vec![Message::new_text(Role::User, "Say 'ok' only")],
+        )
+        .with_max_tokens(10)
+        .with_metadata(meta);
+
+        let resp = router.complete(&req).await.expect("anthropic completion with metadata failed");
+        assert!(!resp.text().is_empty());
+        assert_eq!(resp.provider, Provider::Anthropic);
+    }
+
+    #[tokio::test]
     async fn test_google_basic_completion() {
         setup();
         let key = std::env::var("GOOGLE_API_KEY").expect("GOOGLE_API_KEY not set");
@@ -63,6 +113,28 @@ mod tests {
 
         let resp = router.complete(&req).await.expect("google completion failed");
         assert!(!resp.text().is_empty(), "response should not be empty");
+        assert_eq!(resp.provider, Provider::Google);
+    }
+
+    #[tokio::test]
+    async fn test_google_completion_with_metadata_not_forwarded() {
+        setup();
+        let key = std::env::var("GOOGLE_API_KEY").expect("GOOGLE_API_KEY not set");
+        let router = Router::new(vec![with_google(&key, vec![])]).unwrap();
+
+        let mut meta = HashMap::new();
+        meta.insert("would_break_if_sent_as_labels".to_string(), "x".to_string());
+
+        let req = CompletionRequest::new(
+            Provider::Google,
+            "gemini-2.0-flash",
+            vec![Message::new_text(Role::User, "Say 'ok' only")],
+        )
+        .with_max_tokens(10)
+        .with_metadata(meta);
+
+        let resp = router.complete(&req).await.expect("google should accept request; metadata ignored");
+        assert!(!resp.text().is_empty());
         assert_eq!(resp.provider, Provider::Google);
     }
 
@@ -127,6 +199,34 @@ mod tests {
                 println!("SKIP: Vertex model not available on this project: {}", e.message);
             }
             Err(e) => panic!("vertex completion failed: {}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_vertex_completion_with_metadata() {
+        let router = vertex_router();
+
+        let mut meta = HashMap::new();
+        meta.insert("team".to_string(), "integration".to_string());
+
+        let req = CompletionRequest::new(
+            Provider::Vertex,
+            "gemini-3.1-pro-preview",
+            vec![Message::new_text(Role::User, "Say 'hello' only")],
+        )
+        .with_max_tokens(10)
+        .with_metadata(meta);
+
+        let resp = router.complete(&req).await;
+        match resp {
+            Ok(resp) => {
+                assert!(!resp.text().is_empty());
+                assert_eq!(resp.provider, Provider::Vertex);
+            }
+            Err(e) if e.code == "model_not_found" => {
+                println!("SKIP: Vertex model not available on this project: {}", e.message);
+            }
+            Err(e) => panic!("vertex completion with metadata failed: {}", e),
         }
     }
 
@@ -344,6 +444,77 @@ mod tests {
         }
 
         assert_eq!(seen_ids, expected_ids, "not all custom_ids appeared in results");
+    }
+
+    /// Requires `VERTEX_BATCH_WAIT_RESULTS=1` plus the same Vertex batch env as other batch tests.
+    #[tokio::test]
+    async fn test_vertex_batch_metadata_get_results_echoed_labels() {
+        if std::env::var("VERTEX_BATCH_WAIT_RESULTS").ok().as_deref() != Some("1") {
+            println!("SKIP: set VERTEX_BATCH_WAIT_RESULTS=1 to run this long-running batch test");
+            return;
+        }
+
+        use tokio::time::Duration;
+
+        let manager = vertex_batch_manager();
+
+        let requests: Vec<BatchRequest> = (1..=2)
+            .map(|i| {
+                let mut meta = HashMap::new();
+                meta.insert("team".to_string(), "qa".to_string());
+                BatchRequest {
+                    custom_id: format!("meta-req-{}", i),
+                    request: CompletionRequest::new(
+                        Provider::Vertex,
+                        "gemini-3.1-pro-preview",
+                        vec![Message::new_text(Role::User, "Reply with one word: hello")],
+                    )
+                    .with_max_tokens(10)
+                    .with_metadata(meta),
+                }
+            })
+            .collect();
+
+        let job = match manager.create(Provider::Vertex, requests).await {
+            Ok(j) => j,
+            Err(e) if e.code == "model_not_found" => {
+                println!("SKIP: Vertex model not available: {}", e.message);
+                return;
+            }
+            Err(e) => panic!("failed to create vertex batch job: {}", e),
+        };
+
+        let completed = manager
+            .wait(Provider::Vertex, &job.id, Duration::from_secs(15))
+            .await
+            .expect("wait for vertex batch");
+
+        if completed.status != BatchStatus::Completed {
+            println!(
+                "SKIP: batch ended with status {:?} (not Completed)",
+                completed.status
+            );
+            return;
+        }
+
+        let results = manager
+            .get_results(Provider::Vertex, &completed.id)
+            .await
+            .expect("get_results");
+
+        for r in &results {
+            let labels = r
+                .request_labels
+                .as_ref()
+                .expect("expected echoed request_labels from Vertex");
+            assert_eq!(labels.get("team"), Some(&"qa".to_string()));
+            assert!(
+                r.custom_id.starts_with("meta-req-"),
+                "custom_id mismatch: {}",
+                r.custom_id
+            );
+            assert_eq!(labels.get("custom_id"), Some(&r.custom_id));
+        }
     }
 
     #[tokio::test]

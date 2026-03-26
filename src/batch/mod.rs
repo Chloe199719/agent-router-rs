@@ -45,6 +45,8 @@ pub struct Counts {
 #[derive(Debug)]
 pub struct Result {
     pub custom_id: String,
+    /// Echoed request labels (Vertex batch); see [`crate::provider::BatchResult::request_labels`].
+    pub request_labels: Option<HashMap<String, String>>,
     pub response: Option<crate::types::CompletionResponse>,
     pub error: Option<RouterError>,
 }
@@ -182,6 +184,7 @@ fn convert_job(j: BatchJob) -> Job {
 fn convert_results(results: Vec<BatchResult>) -> Vec<Result> {
     results.into_iter().map(|r| Result {
         custom_id: r.custom_id,
+        request_labels: r.request_labels,
         response: r.response,
         error: r.error,
     }).collect()

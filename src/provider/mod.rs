@@ -1,6 +1,7 @@
 //! Provider traits and common configuration.
 
 use async_trait::async_trait;
+use std::collections::HashMap;
 use std::pin::Pin;
 use futures::Stream;
 use crate::types::{Provider, Feature, CompletionRequest, CompletionResponse, StreamEvent};
@@ -125,6 +126,8 @@ pub struct RequestCounts {
 pub struct BatchResult {
     /// Matches the request's custom_id.
     pub custom_id: String,
+    /// Echoed Gemini `labels` from the batch output line (`request.labels`), when present.
+    pub request_labels: Option<HashMap<String, String>>,
     /// The completion response (if successful).
     pub response: Option<CompletionResponse>,
     /// The error that occurred (if failed).

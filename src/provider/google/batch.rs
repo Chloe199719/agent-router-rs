@@ -237,6 +237,7 @@ impl Client {
         while let Some(Ok(line)) = deserializer.next() {
             let mut result = BatchResult {
                 custom_id: String::new(),
+                request_labels: None,
                 response: None,
                 error: None,
             };
@@ -263,6 +264,7 @@ impl Client {
         responses.iter().map(|resp| {
             let mut result = BatchResult {
                 custom_id: String::new(),
+                request_labels: None,
                 response: None,
                 error: None,
             };

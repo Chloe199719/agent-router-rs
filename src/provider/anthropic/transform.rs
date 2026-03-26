@@ -22,6 +22,14 @@ impl Transformer {
     pub fn transform_request(&self, req: &CompletionRequest) -> MessagesRequest {
         let (messages, system) = self.transform_messages(&req.messages);
 
+        let metadata = req
+            .metadata
+            .as_ref()
+            .and_then(|m| m.get("user_id"))
+            .map(|uid| super::types::MessagesMetadata {
+                user_id: Some(uid.clone()),
+            });
+
         let mut anth_req = MessagesRequest {
             model: req.model.clone(),
             messages,
@@ -39,6 +47,7 @@ impl Transformer {
             tools: None,
             tool_choice: None,
             output_config: None,
+            metadata,
         };
 
         if let Some(ref rf) = req.response_format {
@@ -276,5 +285,31 @@ impl Transformer {
 impl Default for Transformer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use crate::types::{CompletionRequest, Message, Provider, Role};
+
+    #[test]
+    fn forwards_only_user_id_in_metadata() {
+        let t = Transformer::new();
+        let mut m = HashMap::new();
+        m.insert("user_id".to_string(), "u1".to_string());
+        m.insert("ignored".to_string(), "x".to_string());
+        let req = CompletionRequest::new(
+            Provider::Anthropic,
+            "claude-3-haiku-20240307",
+            vec![Message::new_text(Role::User, "x")],
+        )
+        .with_metadata(m);
+        let anth = t.transform_request(&req);
+        let v = serde_json::to_value(&anth).unwrap();
+        let meta = v.get("metadata").expect("metadata");
+        assert_eq!(meta["user_id"], "u1");
+        assert!(meta.get("ignored").is_none());
     }
 }

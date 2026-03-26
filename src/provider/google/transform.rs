@@ -10,6 +10,25 @@ use crate::types::{
     StopReason, StreamEvent, StreamEventType, Tool, ToolCall, ToolChoice, ToolChoiceType, Usage,
 };
 
+/// Copies unified request [`CompletionRequest::metadata`](crate::types::CompletionRequest::metadata)
+/// into Gemini `labels` on `req`.
+///
+/// Call only for Vertex AI. Google Generative Language (AI Studio) rejects unknown fields such as
+/// `labels`. Invalid keys or values per [GCP label rules](https://cloud.google.com/resource-manager/docs/creating-managing-labels)
+/// surface as API errors from Vertex.
+pub fn apply_metadata_as_labels(
+    req: &mut GenerateContentRequest,
+    metadata: Option<&HashMap<String, String>>,
+) {
+    let Some(m) = metadata else {
+        return;
+    };
+    if m.is_empty() {
+        return;
+    }
+    req.labels = Some(m.clone());
+}
+
 /// Transformer handles conversion between unified and Google formats.
 pub struct Transformer {
     schema_translator: Translator,
@@ -445,5 +464,39 @@ impl Transformer {
 impl Default for Transformer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{CompletionRequest, Message, Provider, Role};
+
+    #[test]
+    fn transform_request_leaves_labels_none() {
+        let t = Transformer::new();
+        let req = CompletionRequest::new(
+            Provider::Google,
+            "gemini-2.0-flash",
+            vec![Message::new_text(Role::User, "hi")],
+        );
+        let g = t.transform_request(&req);
+        assert!(g.labels.is_none());
+    }
+
+    #[test]
+    fn apply_metadata_as_labels_sets_labels() {
+        let t = Transformer::new();
+        let mut m = HashMap::new();
+        m.insert("env".to_string(), "test".to_string());
+        let req = CompletionRequest::new(
+            Provider::Vertex,
+            "gemini-2.0-flash",
+            vec![Message::new_text(Role::User, "hi")],
+        )
+        .with_metadata(m);
+        let mut g = t.transform_request(&req);
+        apply_metadata_as_labels(&mut g, req.metadata.as_ref());
+        assert_eq!(g.labels.as_ref().unwrap().get("env"), Some(&"test".to_string()));
     }
 }

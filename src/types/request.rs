@@ -1,5 +1,7 @@
 //! Completion request types.
 
+use std::collections::HashMap;
+
 use super::common::{JsonSchema, Message, Provider, Tool};
 use serde::{Deserialize, Serialize};
 
@@ -54,6 +56,14 @@ pub struct CompletionRequest {
     /// Provider-specific options (passed through without modification).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extra: Option<serde_json::Value>,
+
+    /// Optional string key–value metadata for tracing, billing labels, or dashboards.
+    ///
+    /// Not merged with [`Self::extra`]. Mapping is provider-specific: OpenAI forwards
+    /// as chat `metadata`; Vertex merges into Gemini `labels`; Google (AI Studio) ignores
+    /// it; Anthropic only forwards the `user_id` key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<HashMap<String, String>>,
 }
 
 impl CompletionRequest {
@@ -73,7 +83,18 @@ impl CompletionRequest {
             tool_choice: None,
             stream: false,
             extra: None,
+            metadata: None,
         }
+    }
+
+    /// Set request metadata (replaces any previous map).
+    pub fn with_metadata(mut self, metadata: HashMap<String, String>) -> Self {
+        self.metadata = if metadata.is_empty() {
+            None
+        } else {
+            Some(metadata)
+        };
+        self
     }
 
     /// Set max tokens.
