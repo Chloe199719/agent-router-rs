@@ -121,3 +121,21 @@ pub struct VertexBatchOutputRequest {
     #[serde(default)]
     pub labels: std::collections::HashMap<String, String>,
 }
+
+/// Response from listing Vertex publisher models.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct VertexModelsListResponse {
+    #[serde(default)]
+    pub models: Vec<VertexListedModel>,
+    #[serde(default)]
+    pub next_page_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct VertexListedModel {
+    pub name: String,
+    #[serde(default)]
+    pub supported_generation_methods: Vec<String>,
+}

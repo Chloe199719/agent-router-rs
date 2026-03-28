@@ -99,17 +99,27 @@ impl ProviderClient for Client {
         )
     }
 
-    fn models(&self) -> Vec<String> {
-        vec![
-            "gpt-4o".to_string(),
-            "gpt-4o-mini".to_string(),
-            "gpt-4-turbo".to_string(),
-            "gpt-4".to_string(),
-            "gpt-3.5-turbo".to_string(),
-            "o1".to_string(),
-            "o1-mini".to_string(),
-            "o1-preview".to_string(),
-        ]
+    async fn models(&self) -> Result<Vec<String>, RouterError> {
+        let url = format!("{}/models", self.base_url.trim_end_matches('/'));
+        let builder = self.http.get(&url);
+        let builder = self.set_headers(builder);
+
+        let resp = builder.send().await.map_err(|e| {
+            err_provider_unavailable(Provider::OpenAI, format!("request failed: {}", e))
+        })?;
+
+        if !resp.status().is_success() {
+            return Err(self.handle_error_response(resp).await);
+        }
+
+        let body: ListModelsResponse = resp.json().await.map_err(|e| {
+            err_server_error(Provider::OpenAI, format!("failed to decode models list: {}", e))
+        })?;
+
+        let mut ids: Vec<String> = body.data.into_iter().map(|m| m.id).collect();
+        ids.sort();
+        ids.dedup();
+        Ok(ids)
     }
 
     async fn complete(&self, req: &CompletionRequest) -> Result<CompletionResponse, RouterError> {

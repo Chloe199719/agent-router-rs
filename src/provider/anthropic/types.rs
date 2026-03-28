@@ -242,3 +242,18 @@ pub struct BatchListResponse {
     #[serde(default)]
     pub has_more: bool,
 }
+
+/// Response from `GET /v1/models`.
+#[derive(Debug, Deserialize)]
+pub(crate) struct ModelsListResponse {
+    pub data: Vec<ModelInfo>,
+    #[serde(default)]
+    pub has_more: bool,
+    #[serde(default)]
+    pub last_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ModelInfo {
+    pub id: String,
+}

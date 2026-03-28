@@ -221,6 +221,17 @@ pub struct APIError {
     pub code: Option<String>,
 }
 
+/// Response from `GET /v1/models`.
+#[derive(Debug, Deserialize)]
+pub struct ListModelsResponse {
+    pub data: Vec<ModelSummary>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ModelSummary {
+    pub id: String,
+}
+
 // Batch types
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BatchCreateRequest {

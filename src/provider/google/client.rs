@@ -94,15 +94,65 @@ impl ProviderClient for Client {
         )
     }
 
-    fn models(&self) -> Vec<String> {
-        vec![
-            "gemini-2.0-flash".to_string(),
-            "gemini-2.0-flash-lite".to_string(),
-            "gemini-1.5-pro".to_string(),
-            "gemini-1.5-flash".to_string(),
-            "gemini-1.5-flash-8b".to_string(),
-            "gemini-1.0-pro".to_string(),
-        ]
+    async fn models(&self) -> Result<Vec<String>, RouterError> {
+        let mut collected = Vec::new();
+        let mut page_token: Option<String> = None;
+
+        loop {
+            let mut req = self
+                .http
+                .get(format!("{}/models", self.base_url.trim_end_matches('/')))
+                .query(&[("key", self.config.api_key.as_str())]);
+            if let Some(ref t) = page_token {
+                req = req.query(&[("pageToken", t.as_str())]);
+            }
+
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| err_provider_unavailable(Provider::Google, &e.to_string()))?;
+
+            let status = resp.status().as_u16();
+            let body = resp
+                .bytes()
+                .await
+                .map_err(|e| err_server_error(Provider::Google, &e.to_string()))?;
+
+            if status != 200 {
+                return Err(self.handle_error_response_sync(status, &body));
+            }
+
+            let page: GeminiModelsListResponse = serde_json::from_slice(&body).map_err(|e| {
+                err_server_error(Provider::Google, &format!("failed to decode models list: {}", e))
+            })?;
+
+            for m in page.models {
+                let id = m
+                    .name
+                    .strip_prefix("models/")
+                    .unwrap_or(&m.name)
+                    .to_string();
+                let include = if m.supported_generation_methods.is_empty() {
+                    !id.to_ascii_lowercase().contains("embedding")
+                } else {
+                    m.supported_generation_methods
+                        .iter()
+                        .any(|x| x == "generateContent")
+                };
+                if include {
+                    collected.push(id);
+                }
+            }
+
+            page_token = page.next_page_token;
+            if page_token.is_none() {
+                break;
+            }
+        }
+
+        collected.sort();
+        collected.dedup();
+        Ok(collected)
     }
 
     async fn complete(&self, req: &CompletionRequest) -> Result<CompletionResponse, RouterError> {

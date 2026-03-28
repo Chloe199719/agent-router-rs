@@ -170,10 +170,10 @@ impl Router {
             .unwrap_or(false)
     }
 
-    /// Returns available models for a provider.
-    pub fn models(&self, provider_name: &Provider) -> std::result::Result<Vec<String>, RouterError> {
+    /// Lists model identifiers for a provider by querying the provider's API.
+    pub async fn models(&self, provider_name: &Provider) -> std::result::Result<Vec<String>, RouterError> {
         let p = self.get_provider(provider_name)?;
-        Ok(p.models())
+        p.models().await
     }
 
     fn get_provider(&self, name: &Provider) -> std::result::Result<Arc<dyn ProviderClient>, RouterError> {

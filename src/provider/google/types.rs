@@ -418,3 +418,21 @@ pub struct UploadedFile {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub uri: Option<String>,
 }
+
+/// Response from `GET .../models` (Gemini list models).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GeminiModelsListResponse {
+    #[serde(default)]
+    pub models: Vec<GeminiListedModel>,
+    #[serde(default)]
+    pub next_page_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GeminiListedModel {
+    pub name: String,
+    #[serde(default)]
+    pub supported_generation_methods: Vec<String>,
+}

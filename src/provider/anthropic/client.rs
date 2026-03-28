@@ -110,16 +110,50 @@ impl ProviderClient for Client {
         )
     }
 
-    fn models(&self) -> Vec<String> {
-        vec![
-            "claude-sonnet-4-20250514".to_string(),
-            "claude-opus-4-20250514".to_string(),
-            "claude-3-5-sonnet-20241022".to_string(),
-            "claude-3-5-haiku-20241022".to_string(),
-            "claude-3-opus-20240229".to_string(),
-            "claude-3-sonnet-20240229".to_string(),
-            "claude-3-haiku-20240307".to_string(),
-        ]
+    async fn models(&self) -> Result<Vec<String>, RouterError> {
+        let mut all = Vec::new();
+        let mut after_id: Option<String> = None;
+
+        loop {
+            let mut req = self
+                .http
+                .get(format!("{}/v1/models", self.base_url.trim_end_matches('/')))
+                .header("x-api-key", &self.config.api_key)
+                .header("anthropic-version", DEFAULT_VERSION)
+                .header("anthropic-beta", BETA_HEADER)
+                .query(&[("limit", "1000")]);
+            if let Some(ref a) = after_id {
+                req = req.query(&[("after_id", a.as_str())]);
+            }
+
+            let resp = req.send().await.map_err(|e| {
+                err_provider_unavailable(Provider::Anthropic, format!("request failed: {}", e))
+            })?;
+
+            if !resp.status().is_success() {
+                return Err(self.handle_error_response(resp).await);
+            }
+
+            let page: ModelsListResponse = resp.json().await.map_err(|e| {
+                err_server_error(Provider::Anthropic, format!("failed to decode models list: {}", e))
+            })?;
+
+            for m in page.data {
+                all.push(m.id);
+            }
+
+            if !page.has_more {
+                break;
+            }
+            after_id = page.last_id;
+            if after_id.is_none() {
+                break;
+            }
+        }
+
+        all.sort();
+        all.dedup();
+        Ok(all)
     }
 
     async fn complete(&self, req: &CompletionRequest) -> Result<CompletionResponse, RouterError> {

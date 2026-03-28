@@ -16,6 +16,7 @@ use async_trait::async_trait;
 use crate::errors::*;
 use crate::provider::{ProviderClient, ProviderConfig, StreamResponse, apply_options, ProviderOption};
 use crate::provider::google::{self, Transformer, types::{GenerateContentResponse, ErrorResponse, APIError}};
+use super::types::VertexModelsListResponse;
 use crate::types::{CompletionRequest, CompletionResponse, ContentBlock, Feature, Provider, StopReason, ToolCall, Usage};
 
 pub struct Client {
@@ -136,15 +137,80 @@ impl ProviderClient for Client {
         )
     }
 
-    fn models(&self) -> Vec<String> {
-        vec![
-            "gemini-2.0-flash".to_string(),
-            "gemini-2.0-flash-lite".to_string(),
-            "gemini-1.5-pro".to_string(),
-            "gemini-1.5-flash".to_string(),
-            "gemini-1.5-flash-8b".to_string(),
-            "gemini-1.0-pro".to_string(),
-        ]
+    async fn models(&self) -> Result<Vec<String>, RouterError> {
+        let list_url = format!(
+            "{}/projects/{}/locations/{}/publishers/google/models",
+            self.base_url.trim_end_matches('/'),
+            self.project_id,
+            self.location
+        );
+
+        let mut collected = Vec::new();
+        let mut page_token: Option<String> = None;
+
+        loop {
+            let mut req = self.http.get(&list_url).query(&[("pageSize", "1000")]);
+            if let Some(ref t) = page_token {
+                req = req.query(&[("pageToken", t.as_str())]);
+            }
+            let use_bearer = self
+                .config
+                .access_token
+                .as_deref()
+                .map(|t| !t.is_empty())
+                .unwrap_or(false);
+            if !use_bearer && !self.config.api_key.is_empty() {
+                req = req.query(&[("key", self.config.api_key.as_str())]);
+            }
+            let req = self.set_auth_header(req);
+
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| err_provider_unavailable(Provider::Vertex, &e.to_string()))?;
+
+            let status = resp.status().as_u16();
+            let body = resp
+                .bytes()
+                .await
+                .map_err(|e| err_server_error(Provider::Vertex, &e.to_string()))?;
+
+            if status != 200 {
+                return Err(self.handle_error_response_sync(status, &body));
+            }
+
+            let page: VertexModelsListResponse = serde_json::from_slice(&body).map_err(|e| {
+                err_server_error(Provider::Vertex, &format!("failed to decode models list: {}", e))
+            })?;
+
+            for m in page.models {
+                let id = m
+                    .name
+                    .rsplit_once("/models/")
+                    .map(|(_, id)| id.to_string())
+                    .unwrap_or_else(|| m.name.rsplit('/').next().unwrap_or(&m.name).to_string());
+
+                let include = if m.supported_generation_methods.is_empty() {
+                    !id.to_ascii_lowercase().contains("embedding")
+                } else {
+                    m.supported_generation_methods
+                        .iter()
+                        .any(|x| x == "generateContent")
+                };
+                if include {
+                    collected.push(id);
+                }
+            }
+
+            page_token = page.next_page_token;
+            if page_token.is_none() {
+                break;
+            }
+        }
+
+        collected.sort();
+        collected.dedup();
+        Ok(collected)
     }
 
     async fn complete(&self, req: &CompletionRequest) -> Result<CompletionResponse, RouterError> {

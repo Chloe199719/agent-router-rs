@@ -25,8 +25,8 @@ pub trait ProviderClient: Send + Sync {
     /// Checks if the provider supports a specific feature.
     fn supports_feature(&self, feature: &Feature) -> bool;
 
-    /// Returns the list of available models for this provider.
-    fn models(&self) -> Vec<String>;
+    /// Lists model identifiers by calling the provider's models API (current catalog, not a static list).
+    async fn models(&self) -> Result<Vec<String>, RouterError>;
 }
 
 /// Optional interface for providers that support batch processing.
