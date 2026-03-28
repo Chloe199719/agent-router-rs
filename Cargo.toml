@@ -1,6 +1,6 @@
 [package]
 name = "agent-router-rs"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "A unified Rust library for making LLM inference requests across multiple providers (OpenAI, Anthropic, Google/Gemini, Vertex AI)"
 license = "MIT"
