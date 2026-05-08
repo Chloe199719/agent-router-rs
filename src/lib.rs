@@ -1,5 +1,5 @@
 //! agent-router-rs — a unified Rust library for making LLM inference requests
-//! across multiple providers (OpenAI, Anthropic, Google/Gemini, Vertex AI).
+//! across multiple providers (OpenAI, Anthropic, Google/Gemini, Vertex AI, Kimi).
 //!
 //! # Example
 //!
@@ -278,6 +278,19 @@ pub fn with_vertex(project_id: impl Into<String>, location: impl Into<String>, o
         let client = Arc::new(provider::vertex::Client::new(project_id, location, opts)?);
         builder.providers.insert(Provider::Vertex, client.clone());
         builder.batch_providers.push((Provider::Vertex, client));
+        Ok(())
+    }))
+}
+
+/// Add Kimi (Moonshot AI) as a provider.
+pub fn with_kimi(api_key: impl Into<String>, mut opts: Vec<ProviderOption>) -> RouterOption {
+    let api_key = api_key.into();
+    RouterOption(Box::new(move |builder: &mut RouterBuilder| {
+        let mut all_opts = vec![provider::with_api_key(api_key)];
+        all_opts.append(&mut opts);
+        let client = Arc::new(provider::kimi::Client::new(all_opts)?);
+        builder.providers.insert(Provider::Kimi, client.clone());
+        builder.batch_providers.push((Provider::Kimi, client));
         Ok(())
     }))
 }

@@ -242,3 +242,4 @@ pub mod openai;
 pub mod anthropic;
 pub mod google;
 pub mod vertex;
+pub mod kimi;

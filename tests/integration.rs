@@ -8,9 +8,13 @@
 mod tests {
     use std::collections::HashMap;
 
-    use agent_router::{with_anthropic, with_google, with_openai, with_vertex, provider, Router};
+    use agent_router::batch::{
+        Manager as BatchManager, Request as BatchRequest, Status as BatchStatus,
+    };
     use agent_router::types::{CompletionRequest, Message, Provider, Role, StreamEventType};
-    use agent_router::batch::{Manager as BatchManager, Request as BatchRequest, Status as BatchStatus};
+    use agent_router::{
+        Router, provider, with_anthropic, with_google, with_kimi, with_openai, with_vertex,
+    };
     use futures::StreamExt;
 
     fn setup() {
@@ -30,7 +34,10 @@ mod tests {
         )
         .with_max_tokens(10);
 
-        let resp = router.complete(&req).await.expect("openai completion failed");
+        let resp = router
+            .complete(&req)
+            .await
+            .expect("openai completion failed");
         assert!(!resp.text().is_empty(), "response should not be empty");
         assert_eq!(resp.provider, Provider::OpenAI);
     }
@@ -52,7 +59,10 @@ mod tests {
         .with_max_tokens(10)
         .with_metadata(meta);
 
-        let resp = router.complete(&req).await.expect("openai completion with metadata failed");
+        let resp = router
+            .complete(&req)
+            .await
+            .expect("openai completion with metadata failed");
         assert!(!resp.text().is_empty());
         assert_eq!(resp.provider, Provider::OpenAI);
     }
@@ -70,7 +80,10 @@ mod tests {
         )
         .with_max_tokens(10);
 
-        let resp = router.complete(&req).await.expect("anthropic completion failed");
+        let resp = router
+            .complete(&req)
+            .await
+            .expect("anthropic completion failed");
         assert!(!resp.text().is_empty(), "response should not be empty");
         assert_eq!(resp.provider, Provider::Anthropic);
     }
@@ -93,7 +106,10 @@ mod tests {
         .with_max_tokens(10)
         .with_metadata(meta);
 
-        let resp = router.complete(&req).await.expect("anthropic completion with metadata failed");
+        let resp = router
+            .complete(&req)
+            .await
+            .expect("anthropic completion with metadata failed");
         assert!(!resp.text().is_empty());
         assert_eq!(resp.provider, Provider::Anthropic);
     }
@@ -111,7 +127,10 @@ mod tests {
         )
         .with_max_tokens(10);
 
-        let resp = router.complete(&req).await.expect("google completion failed");
+        let resp = router
+            .complete(&req)
+            .await
+            .expect("google completion failed");
         assert!(!resp.text().is_empty(), "response should not be empty");
         assert_eq!(resp.provider, Provider::Google);
     }
@@ -133,7 +152,10 @@ mod tests {
         .with_max_tokens(10)
         .with_metadata(meta);
 
-        let resp = router.complete(&req).await.expect("google should accept request; metadata ignored");
+        let resp = router
+            .complete(&req)
+            .await
+            .expect("google should accept request; metadata ignored");
         assert!(!resp.text().is_empty());
         assert_eq!(resp.provider, Provider::Google);
     }
@@ -169,12 +191,14 @@ mod tests {
     fn vertex_router() -> Router {
         setup();
         let project_id = std::env::var("VERTEX_PROJECT_ID").expect("VERTEX_PROJECT_ID not set");
-        let location   = std::env::var("VERTEX_LOCATION").expect("VERTEX_LOCATION not set");
-        let token      = std::env::var("VERTEX_ACCESS_TOKEN").expect("VERTEX_ACCESS_TOKEN not set");
+        let location = std::env::var("VERTEX_LOCATION").expect("VERTEX_LOCATION not set");
+        let token = std::env::var("VERTEX_ACCESS_TOKEN").expect("VERTEX_ACCESS_TOKEN not set");
 
-        Router::new(vec![
-            with_vertex(project_id, location, vec![provider::with_access_token(token)]),
-        ])
+        Router::new(vec![with_vertex(
+            project_id,
+            location,
+            vec![provider::with_access_token(token)],
+        )])
         .expect("failed to build Vertex router")
     }
 
@@ -196,7 +220,10 @@ mod tests {
                 assert_eq!(resp.provider, Provider::Vertex);
             }
             Err(e) if e.code == "model_not_found" => {
-                println!("SKIP: Vertex model not available on this project: {}", e.message);
+                println!(
+                    "SKIP: Vertex model not available on this project: {}",
+                    e.message
+                );
             }
             Err(e) => panic!("vertex completion failed: {}", e),
         }
@@ -224,7 +251,10 @@ mod tests {
                 assert_eq!(resp.provider, Provider::Vertex);
             }
             Err(e) if e.code == "model_not_found" => {
-                println!("SKIP: Vertex model not available on this project: {}", e.message);
+                println!(
+                    "SKIP: Vertex model not available on this project: {}",
+                    e.message
+                );
             }
             Err(e) => panic!("vertex completion with metadata failed: {}", e),
         }
@@ -244,13 +274,20 @@ mod tests {
         let stream = router.stream(&req).await;
         let mut stream = match stream {
             Ok(s) => s,
-            Err(e) if e.code == "model_not_found"
-                   || (e.code == "server_error" && e.message.contains("NOT_FOUND")) => {
-                println!("SKIP: Vertex model not available on this project: {}", e.message);
+            Err(e)
+                if e.code == "model_not_found"
+                    || (e.code == "server_error" && e.message.contains("NOT_FOUND")) =>
+            {
+                println!(
+                    "SKIP: Vertex model not available on this project: {}",
+                    e.message
+                );
                 return;
             }
-            Err(e) if e.code == "rate_limit"
-                   || (e.code == "server_error" && e.message.contains("RESOURCE_EXHAUSTED")) => {
+            Err(e)
+                if e.code == "rate_limit"
+                    || (e.code == "server_error" && e.message.contains("RESOURCE_EXHAUSTED")) =>
+            {
                 println!("SKIP: Vertex rate limit hit: {}", e.message);
                 return;
             }
@@ -271,18 +308,18 @@ mod tests {
             }
         }
 
-        assert!(got_start,   "should have received Start event");
+        assert!(got_start, "should have received Start event");
         assert!(got_content, "should have received ContentDelta event");
-        assert!(got_done,    "should have received Done event");
+        assert!(got_done, "should have received Done event");
     }
 
     fn vertex_batch_manager() -> BatchManager {
         setup();
         use std::sync::Arc;
         let project_id = std::env::var("VERTEX_PROJECT_ID").expect("VERTEX_PROJECT_ID not set");
-        let location   = std::env::var("VERTEX_LOCATION").expect("VERTEX_LOCATION not set");
-        let token      = std::env::var("VERTEX_ACCESS_TOKEN").expect("VERTEX_ACCESS_TOKEN not set");
-        let bucket     = std::env::var("VERTEX_BATCH_BUCKET").expect("VERTEX_BATCH_BUCKET not set");
+        let location = std::env::var("VERTEX_LOCATION").expect("VERTEX_LOCATION not set");
+        let token = std::env::var("VERTEX_ACCESS_TOKEN").expect("VERTEX_ACCESS_TOKEN not set");
+        let bucket = std::env::var("VERTEX_BATCH_BUCKET").expect("VERTEX_BATCH_BUCKET not set");
 
         let client = Arc::new(
             agent_router::provider::vertex::Client::new(
@@ -302,15 +339,17 @@ mod tests {
     }
 
     fn vertex_batch_requests(n: usize) -> Vec<BatchRequest> {
-        (1..=n).map(|i| BatchRequest {
-            custom_id: format!("req-{}", i),
-            request: CompletionRequest::new(
-                Provider::Vertex,
-                "gemini-3.1-pro-preview",
-                vec![Message::new_text(Role::User, "Reply with one word: hello")],
-            )
-            .with_max_tokens(10),
-        }).collect()
+        (1..=n)
+            .map(|i| BatchRequest {
+                custom_id: format!("req-{}", i),
+                request: CompletionRequest::new(
+                    Provider::Vertex,
+                    "gemini-3.1-pro-preview",
+                    vec![Message::new_text(Role::User, "Reply with one word: hello")],
+                )
+                .with_max_tokens(10),
+            })
+            .collect()
     }
 
     #[tokio::test]
@@ -323,7 +362,10 @@ mod tests {
         let job = match manager.create(Provider::Vertex, requests).await {
             Ok(j) => j,
             Err(e) if e.code == "model_not_found" => {
-                println!("SKIP: Vertex model not available on this project: {}", e.message);
+                println!(
+                    "SKIP: Vertex model not available on this project: {}",
+                    e.message
+                );
                 return;
             }
             Err(e) => panic!("failed to create vertex batch job: {}", e),
@@ -332,8 +374,12 @@ mod tests {
         assert!(!job.id.is_empty(), "job id should not be empty");
         assert_eq!(job.provider, Provider::Vertex);
         assert!(
-            matches!(job.status, BatchStatus::Pending | BatchStatus::Validating | BatchStatus::InProgress),
-            "unexpected initial status: {:?}", job.status
+            matches!(
+                job.status,
+                BatchStatus::Pending | BatchStatus::Validating | BatchStatus::InProgress
+            ),
+            "unexpected initial status: {:?}",
+            job.status
         );
 
         // Verify get_batch works
@@ -358,8 +404,12 @@ mod tests {
             .expect("failed to fetch job after cancel");
         assert!(
             after_cancel.status.is_done()
-                || matches!(after_cancel.status, BatchStatus::Pending | BatchStatus::InProgress | BatchStatus::Validating),
-            "unexpected job status after cancel: {:?}", after_cancel.status
+                || matches!(
+                    after_cancel.status,
+                    BatchStatus::Pending | BatchStatus::InProgress | BatchStatus::Validating
+                ),
+            "unexpected job status after cancel: {:?}",
+            after_cancel.status
         );
     }
 
@@ -369,7 +419,13 @@ mod tests {
 
         // list returns successfully (may be empty if no prior jobs)
         let jobs = manager
-            .list(Provider::Vertex, Some(agent_router::batch::ListOptions { limit: Some(5), after: None }))
+            .list(
+                Provider::Vertex,
+                Some(agent_router::batch::ListOptions {
+                    limit: Some(5),
+                    after: None,
+                }),
+            )
             .await
             .expect("failed to list vertex batch jobs");
 
@@ -398,7 +454,10 @@ mod tests {
         let job = match manager.create(Provider::Vertex, requests).await {
             Ok(j) => j,
             Err(e) if e.code == "model_not_found" => {
-                println!("SKIP: Vertex model not available on this project: {}", e.message);
+                println!(
+                    "SKIP: Vertex model not available on this project: {}",
+                    e.message
+                );
                 return;
             }
             Err(e) => panic!("failed to create vertex batch job: {}", e),
@@ -415,9 +474,16 @@ mod tests {
             .await
             .expect("failed while waiting for vertex batch job");
 
-        println!("batch job finished: {} (status: {})", completed.id, completed.status);
-        assert_eq!(completed.status, BatchStatus::Completed,
-            "expected Completed but got {:?}", completed.status);
+        println!(
+            "batch job finished: {} (status: {})",
+            completed.id, completed.status
+        );
+        assert_eq!(
+            completed.status,
+            BatchStatus::Completed,
+            "expected Completed but got {:?}",
+            completed.status
+        );
         assert_eq!(completed.counts.total, 2);
         assert_eq!(completed.counts.failed, 0);
         assert_eq!(completed.counts.completed, 2);
@@ -428,22 +494,42 @@ mod tests {
             .await
             .expect("failed to get vertex batch results");
 
-        assert_eq!(results.len(), 2, "expected 2 results, got {}", results.len());
+        assert_eq!(
+            results.len(),
+            2,
+            "expected 2 results, got {}",
+            results.len()
+        );
 
         let mut seen_ids = std::collections::HashSet::new();
         for result in &results {
             assert!(
                 expected_ids.contains(&result.custom_id),
-                "unexpected custom_id in results: {:?}", result.custom_id
+                "unexpected custom_id in results: {:?}",
+                result.custom_id
             );
-            assert!(result.error.is_none(), "result {:?} has error: {:?}", result.custom_id, result.error);
-            let resp = result.response.as_ref()
+            assert!(
+                result.error.is_none(),
+                "result {:?} has error: {:?}",
+                result.custom_id,
+                result.error
+            );
+            let resp = result
+                .response
+                .as_ref()
                 .expect(&format!("result {:?} has no response", result.custom_id));
-            assert!(!resp.text().is_empty(), "result {:?} has empty text", result.custom_id);
+            assert!(
+                !resp.text().is_empty(),
+                "result {:?} has empty text",
+                result.custom_id
+            );
             seen_ids.insert(result.custom_id.clone());
         }
 
-        assert_eq!(seen_ids, expected_ids, "not all custom_ids appeared in results");
+        assert_eq!(
+            seen_ids, expected_ids,
+            "not all custom_ids appeared in results"
+        );
     }
 
     /// Requires `VERTEX_BATCH_WAIT_RESULTS=1` plus the same Vertex batch env as other batch tests.
@@ -515,6 +601,169 @@ mod tests {
             );
             assert_eq!(labels.get("custom_id"), Some(&r.custom_id));
         }
+    }
+
+    // ---- Kimi ----
+
+    #[tokio::test]
+    async fn test_kimi_basic_completion() {
+        setup();
+        let key = std::env::var("KIMI_API_KEY").expect("KIMI_API_KEY not set");
+        let router = Router::new(vec![with_kimi(&key, vec![])]).unwrap();
+
+        let req = CompletionRequest::new(
+            Provider::Kimi,
+            "kimi-k2.6",
+            vec![Message::new_text(Role::User, "Say 'hello' only")],
+        )
+        .with_max_tokens(100);
+
+        let resp = router.complete(&req).await.expect("kimi completion failed");
+        assert!(!resp.text().is_empty(), "response should not be empty");
+        assert_eq!(resp.provider, Provider::Kimi);
+    }
+
+    #[tokio::test]
+    async fn test_kimi_completion_with_metadata() {
+        setup();
+        let key = std::env::var("KIMI_API_KEY").expect("KIMI_API_KEY not set");
+        let router = Router::new(vec![with_kimi(&key, vec![])]).unwrap();
+
+        let mut meta = HashMap::new();
+        meta.insert("trace_id".to_string(), "router-integration".to_string());
+
+        let req = CompletionRequest::new(
+            Provider::Kimi,
+            "kimi-k2.6",
+            vec![Message::new_text(Role::User, "Say 'ok' only")],
+        )
+        .with_max_tokens(100)
+        .with_metadata(meta);
+
+        let resp = router
+            .complete(&req)
+            .await
+            .expect("kimi completion with metadata failed");
+        assert!(!resp.text().is_empty());
+        assert_eq!(resp.provider, Provider::Kimi);
+    }
+
+    #[tokio::test]
+    async fn test_kimi_streaming() {
+        setup();
+        let key = std::env::var("KIMI_API_KEY").expect("KIMI_API_KEY not set");
+        let router = Router::new(vec![with_kimi(&key, vec![])]).unwrap();
+
+        // Use moonshot-v1-8k for streaming because kimi-k2.6 is a reasoning model
+        // that emits reasoning_content deltas before content, which would require
+        // larger max_tokens to see actual content in the stream.
+        let req = CompletionRequest::new(
+            Provider::Kimi,
+            "moonshot-v1-8k",
+            vec![Message::new_text(Role::User, "Say 'hello' only")],
+        )
+        .with_max_tokens(100);
+
+        let mut stream = router.stream(&req).await.expect("stream failed");
+        let mut got_content = false;
+
+        while let Some(result) = stream.next().await {
+            let event = result.expect("stream event error");
+            if event.event_type == StreamEventType::ContentDelta {
+                got_content = true;
+            }
+        }
+
+        assert!(got_content, "should have received content delta");
+    }
+
+    fn kimi_batch_manager() -> BatchManager {
+        setup();
+        use std::sync::Arc;
+        let key = std::env::var("KIMI_API_KEY").expect("KIMI_API_KEY not set");
+        let client = Arc::new(
+            agent_router::provider::kimi::Client::new(vec![provider::with_api_key(key)])
+                .expect("failed to build kimi client"),
+        );
+
+        let mut manager = BatchManager::new();
+        manager.register_provider(client);
+        manager
+    }
+
+    #[tokio::test]
+    async fn test_kimi_batch_create_and_get() {
+        let manager = kimi_batch_manager();
+
+        let requests = vec![
+            BatchRequest {
+                custom_id: "kimi-req-1".to_string(),
+                request: CompletionRequest::new(
+                    Provider::Kimi,
+                    "kimi-k2.6",
+                    vec![Message::new_text(Role::User, "Say 'batch ok' only")],
+                )
+                .with_max_tokens(10),
+            },
+            BatchRequest {
+                custom_id: "kimi-req-2".to_string(),
+                request: CompletionRequest::new(
+                    Provider::Kimi,
+                    "kimi-k2.6",
+                    vec![Message::new_text(Role::User, "Say 'batch ok 2' only")],
+                )
+                .with_max_tokens(10),
+            },
+        ];
+
+        let job = manager
+            .create(Provider::Kimi, requests)
+            .await
+            .expect("create batch");
+        assert!(!job.id.is_empty(), "batch job should have an id");
+        assert_eq!(job.provider, Provider::Kimi);
+        assert_eq!(job.counts.total, 2);
+
+        let fetched = manager
+            .get(Provider::Kimi, &job.id)
+            .await
+            .expect("get batch");
+        assert_eq!(fetched.id, job.id);
+    }
+
+    #[tokio::test]
+    async fn test_kimi_batch_list() {
+        let manager = kimi_batch_manager();
+        let list = manager
+            .list(Provider::Kimi, None)
+            .await
+            .expect("list batches");
+        // Just assert that the call succeeds; list may be empty.
+        assert!(list.len() >= 0);
+    }
+
+    #[tokio::test]
+    async fn test_kimi_batch_cancel() {
+        let manager = kimi_batch_manager();
+
+        let requests = vec![BatchRequest {
+            custom_id: "kimi-cancel-1".to_string(),
+            request: CompletionRequest::new(
+                Provider::Kimi,
+                "kimi-k2.6",
+                vec![Message::new_text(Role::User, "Say 'cancel' only")],
+            )
+            .with_max_tokens(10),
+        }];
+
+        let job = manager
+            .create(Provider::Kimi, requests)
+            .await
+            .expect("create batch");
+        manager
+            .cancel(Provider::Kimi, &job.id)
+            .await
+            .expect("cancel batch");
     }
 
     #[tokio::test]

@@ -15,6 +15,8 @@ pub enum Provider {
     Google,
     #[serde(rename = "vertex")]
     Vertex,
+    #[serde(rename = "kimi")]
+    Kimi,
 }
 
 impl std::fmt::Display for Provider {
@@ -24,6 +26,7 @@ impl std::fmt::Display for Provider {
             Provider::Anthropic => write!(f, "anthropic"),
             Provider::Google => write!(f, "google"),
             Provider::Vertex => write!(f, "vertex"),
+            Provider::Kimi => write!(f, "kimi"),
         }
     }
 }
